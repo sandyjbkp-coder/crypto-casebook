@@ -142,6 +142,63 @@ function summary(data) {
   };
 }
 
+function directionOf(structure) {
+  if (!structure || structure.label === "UNKNOWN") return "UNKNOWN";
+  if (structure.label === "HH / HL") return "UP";
+  if (structure.label === "LH / LL") return "DOWN";
+  return "MIXED";
+}
+
+function integrityGate(s15, s1, s4) {
+  const d15 = directionOf(s15.structure);
+  const d1 = directionOf(s1.structure);
+  const d4 = directionOf(s4.structure);
+
+  const directions = {
+    "15m": d15,
+    "1h": d1,
+    "4h": d4
+  };
+
+  if ([d15, d1, d4].includes("UNKNOWN")) {
+    return {
+      alignment: "UNRESOLVED",
+      gate: "FAIL",
+      state: "NO SETUP",
+      reason: "One or more timeframes lack confirmed swing structure",
+      directions
+    };
+  }
+
+  if (d15 === "MIXED" || d1 === "MIXED" || d4 === "MIXED") {
+    return {
+      alignment: "CONFLICTING",
+      gate: "FAIL",
+      state: "NO SETUP",
+      reason: "One or more timeframes are mixed / transitional",
+      directions
+    };
+  }
+
+  if (d15 !== d1 || d1 !== d4) {
+    return {
+      alignment: "CONFLICTING",
+      gate: "FAIL",
+      state: "NO SETUP",
+      reason: "15m, 1h and 4h directional structures are not aligned",
+      directions
+    };
+  }
+
+  return {
+    alignment: "ALIGNED",
+    gate: "PASS",
+    state: "RESEARCH CANDIDATE",
+    reason: "15m, 1h and 4h confirmed swing structures agree",
+    directions
+  };
+}
+
 try {
   console.log("================================");
   console.log("CRYPTO CASEBOOK - MARKET DIAGNOSTICS");
@@ -182,6 +239,20 @@ try {
   console.log(" ATR14:", s4.atr14.toFixed(6));
   console.log(" Structure:", s4.structure.label);
   console.log(" Last swings:", s4.structure.highState || "-", "/", s4.structure.lowState || "-");
+  console.log("");
+
+  const integrity = integrityGate(s15, s1, s4);
+
+  console.log("================================");
+  console.log("DECISION INTEGRITY");
+  console.log("================================");
+  console.log("15m Direction:", integrity.directions["15m"]);
+  console.log("1h Direction:", integrity.directions["1h"]);
+  console.log("4h Direction:", integrity.directions["4h"]);
+  console.log("TF Alignment:", integrity.alignment);
+  console.log("Integrity Gate:", integrity.gate);
+  console.log("Research State:", integrity.state);
+  console.log("Reason:", integrity.reason);
   console.log("");
 
   console.log("Data quality: LIVE PUBLIC MARKET DATA");
