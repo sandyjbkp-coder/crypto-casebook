@@ -142,6 +142,102 @@ function summary(data) {
   };
 }
 
+function normalizedATR(data, period = 14) {
+  if (data.length < period + 1) return null;
+
+  const value = atr(data, period);
+  const close = data[data.length - 1].close;
+
+  if (!value || !close) return null;
+
+  return (value / close) * 100;
+}
+
+function atrRatio(data, period = 14) {
+  if (data.length < period * 3) return null;
+
+  const recent = data.slice(-period - 1);
+  const baseline = data.slice(-(period * 3), -(period + 1));
+
+  const recentATR = atr(recent, period);
+
+  const baselineChunks = [];
+
+  for (let i = period; i < baseline.length; i++) {
+    const chunk = baseline.slice(i - period, i + 1);
+    const value = atr(chunk, period);
+
+    if (value !== null) baselineChunks.push(value);
+  }
+
+  if (!recentATR || baselineChunks.length === 0) return null;
+
+  const baselineATR =
+    baselineChunks.reduce((a, b) => a + b, 0) /
+    baselineChunks.length;
+
+  if (!baselineATR) return null;
+
+  return recentATR / baselineATR;
+}
+
+function regime(data, structureResult) {
+  const ratio = atrRatio(data);
+  const natr = normalizedATR(data);
+
+  if (ratio === null || natr === null) {
+    return {
+      label: "UNKNOWN",
+      volatility: "UNKNOWN",
+      atrRatio: ratio,
+      normalizedATR: natr
+    };
+  }
+
+  let volatility = "NORMAL";
+
+  if (ratio >= 1.25) {
+    volatility = "EXPANSION";
+  } else if (ratio <= 0.75) {
+    volatility = "CONTRACTION";
+  }
+
+  const direction = directionOf(structureResult);
+
+  let label = "TRANSITION";
+
+  if (
+    (direction === "UP" || direction === "DOWN") &&
+    volatility === "EXPANSION"
+  ) {
+    label = "TRENDING / EXPANSION";
+  } else if (
+    (direction === "UP" || direction === "DOWN") &&
+    volatility === "NORMAL"
+  ) {
+    label = "TRENDING";
+  } else if (
+    direction === "MIXED" &&
+    volatility === "CONTRACTION"
+  ) {
+    label = "RANGING / CONTRACTION";
+  } else if (
+    direction === "MIXED" &&
+    volatility === "EXPANSION"
+  ) {
+    label = "TRANSITION / EXPANSION";
+  } else if (direction === "MIXED") {
+    label = "TRANSITION";
+  }
+
+  return {
+    label,
+    volatility,
+    atrRatio: ratio,
+    normalizedATR: natr
+  };
+}
+
 function directionOf(structure) {
   if (!structure || structure.label === "UNKNOWN") return "UNKNOWN";
   if (structure.label === "HH / HL") return "UP";
@@ -239,6 +335,43 @@ try {
   console.log(" ATR14:", s4.atr14.toFixed(6));
   console.log(" Structure:", s4.structure.label);
   console.log(" Last swings:", s4.structure.highState || "-", "/", s4.structure.lowState || "-");
+  console.log("");
+
+  const r15 = regime(m15, s15.structure);
+  const r1 = regime(h1, s1.structure);
+  const r4 = regime(h4, s4.structure);
+
+  console.log("================================");
+  console.log("MARKET REGIME");
+  console.log("================================");
+
+  console.log(
+    "15m:",
+    r15.label,
+    "| ATR Ratio:",
+    r15.atrRatio?.toFixed(2) ?? "N/A",
+    "| NATR:",
+    r15.normalizedATR?.toFixed(2) + "%" ?? "N/A"
+  );
+
+  console.log(
+    "1h:",
+    r1.label,
+    "| ATR Ratio:",
+    r1.atrRatio?.toFixed(2) ?? "N/A",
+    "| NATR:",
+    r1.normalizedATR?.toFixed(2) + "%" ?? "N/A"
+  );
+
+  console.log(
+    "4h:",
+    r4.label,
+    "| ATR Ratio:",
+    r4.atrRatio?.toFixed(2) ?? "N/A",
+    "| NATR:",
+    r4.normalizedATR?.toFixed(2) + "%" ?? "N/A"
+  );
+
   console.log("");
 
   const integrity = integrityGate(s15, s1, s4);
