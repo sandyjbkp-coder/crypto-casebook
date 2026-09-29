@@ -54,30 +54,77 @@ function atr(data, period = 14) {
   return recent.reduce((a, b) => a + b, 0) / recent.length;
 }
 
-function structure(data, lookback = 20) {
-  const x = data.slice(-lookback);
+function findPivots(data, left = 2, right = 2) {
+  const highs = [];
+  const lows = [];
 
-  if (x.length < 2) return "UNKNOWN";
+  for (let i = left; i < data.length - right; i++) {
+    const c = data[i];
 
-  const half = Math.floor(x.length / 2);
-  const old = x.slice(0, half);
-  const recent = x.slice(half);
+    let isHigh = true;
+    let isLow = true;
 
-  const oldHigh = Math.max(...old.map((c) => c.high));
-  const oldLow = Math.min(...old.map((c) => c.low));
+    for (let j = i - left; j <= i + right; j++) {
+      if (j === i) continue;
 
-  const recentHigh = Math.max(...recent.map((c) => c.high));
-  const recentLow = Math.min(...recent.map((c) => c.low));
+      if (data[j].high >= c.high) isHigh = false;
+      if (data[j].low <= c.low) isLow = false;
+    }
 
-  if (recentHigh > oldHigh && recentLow > oldLow) {
-    return "HIGHER-HIGH / HIGHER-LOW";
+    if (isHigh) {
+      highs.push({ time: c.time, price: c.high });
+    }
+
+    if (isLow) {
+      lows.push({ time: c.time, price: c.low });
+    }
   }
 
-  if (recentHigh < oldHigh && recentLow < oldLow) {
-    return "LOWER-HIGH / LOWER-LOW";
+  return { highs, lows };
+}
+
+function structure(data) {
+  const { highs, lows } = findPivots(data);
+
+  if (highs.length < 2 || lows.length < 2) {
+    return {
+      label: "UNKNOWN",
+      highState: null,
+      lowState: null
+    };
   }
 
-  return "MIXED / RANGE";
+  const h1 = highs[highs.length - 2];
+  const h2 = highs[highs.length - 1];
+
+  const l1 = lows[lows.length - 2];
+  const l2 = lows[lows.length - 1];
+
+  const highState =
+    h2.price > h1.price ? "HH" :
+    h2.price < h1.price ? "LH" : "EH";
+
+  const lowState =
+    l2.price > l1.price ? "HL" :
+    l2.price < l1.price ? "LL" : "EL";
+
+  let label = "MIXED / TRANSITION";
+
+  if (highState === "HH" && lowState === "HL") {
+    label = "HH / HL";
+  } else if (highState === "LH" && lowState === "LL") {
+    label = "LH / LL";
+  }
+
+  return {
+    label,
+    highState,
+    lowState,
+    previousHigh: h1,
+    lastHigh: h2,
+    previousLow: l1,
+    lastLow: l2
+  };
 }
 
 function summary(data) {
@@ -117,21 +164,24 @@ try {
   console.log(" Close:", s15.close);
   console.log(" 20-candle change:", s15.change20.toFixed(2) + "%");
   console.log(" ATR14:", s15.atr14.toFixed(6));
-  console.log(" Structure:", s15.structure);
+  console.log(" Structure:", s15.structure.label);
+  console.log(" Last swings:", s15.structure.highState || "-", "/", s15.structure.lowState || "-");
   console.log("");
 
   console.log("1h");
   console.log(" Close:", s1.close);
   console.log(" 20-candle change:", s1.change20.toFixed(2) + "%");
   console.log(" ATR14:", s1.atr14.toFixed(6));
-  console.log(" Structure:", s1.structure);
+  console.log(" Structure:", s1.structure.label);
+  console.log(" Last swings:", s1.structure.highState || "-", "/", s1.structure.lowState || "-");
   console.log("");
 
   console.log("4h");
   console.log(" Close:", s4.close);
   console.log(" 20-candle change:", s4.change20.toFixed(2) + "%");
   console.log(" ATR14:", s4.atr14.toFixed(6));
-  console.log(" Structure:", s4.structure);
+  console.log(" Structure:", s4.structure.label);
+  console.log(" Last swings:", s4.structure.highState || "-", "/", s4.structure.lowState || "-");
   console.log("");
 
   console.log("Data quality: LIVE PUBLIC MARKET DATA");
