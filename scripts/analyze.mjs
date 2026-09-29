@@ -142,6 +142,105 @@ function summary(data) {
   };
 }
 
+function validateCandles(data, intervalMinutes) {
+  if (!Array.isArray(data) || data.length < 50) {
+    return {
+      status: "MISSING",
+      pass: false,
+      reason: "Insufficient candle history"
+    };
+  }
+
+  const intervalMs = intervalMinutes * 60 * 1000;
+  const now = Date.now();
+
+  for (const c of data) {
+    if (
+      !Number.isFinite(c.time) ||
+      !Number.isFinite(c.open) ||
+      !Number.isFinite(c.high) ||
+      !Number.isFinite(c.low) ||
+      !Number.isFinite(c.close) ||
+      !Number.isFinite(c.volume)
+    ) {
+      return {
+        status: "UNRELIABLE",
+        pass: false,
+        reason: "Non-numeric candle field detected"
+      };
+    }
+
+    if (
+      c.high < c.low ||
+      c.high < c.open ||
+      c.high < c.close ||
+      c.low > c.open ||
+      c.low > c.close
+    ) {
+      return {
+        status: "UNRELIABLE",
+        pass: false,
+        reason: "Invalid OHLC relationship detected"
+      };
+    }
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    const gap = data[i].time - data[i - 1].time;
+
+    if (gap <= 0) {
+      return {
+        status: "CONFLICTING",
+        pass: false,
+        reason: "Duplicate or non-chronological candles"
+      };
+    }
+
+    if (gap > intervalMs * 1.5) {
+      return {
+        status: "MISSING",
+        pass: false,
+        reason: "Candle timestamp gap detected"
+      };
+    }
+  }
+
+  const last = data[data.length - 1];
+  const age = now - last.time;
+
+  if (age > intervalMs * 2.5) {
+    return {
+      status: "STALE",
+      pass: false,
+      reason: "Latest candle is stale"
+    };
+  }
+
+  return {
+    status: "VERIFIED",
+    pass: true,
+    reason: "Chronology, freshness and OHLC checks passed"
+  };
+}
+
+function dataQualityGate(m15, h1, h4) {
+  const q15 = validateCandles(m15, 15);
+  const q1 = validateCandles(h1, 60);
+  const q4 = validateCandles(h4, 240);
+
+  const pass = q15.pass && q1.pass && q4.pass;
+
+  return {
+    pass,
+    status: pass ? "VERIFIED" : "FAIL",
+    frames: {
+      "15m": q15,
+      "1h": q1,
+      "4h": q4
+    }
+  };
+}
+
 function normalizedATR(data, period = 14) {
   if (data.length < period + 1) return null;
 
@@ -335,6 +434,36 @@ try {
   console.log(" ATR14:", s4.atr14.toFixed(6));
   console.log(" Structure:", s4.structure.label);
   console.log(" Last swings:", s4.structure.highState || "-", "/", s4.structure.lowState || "-");
+  console.log("");
+
+  const quality = dataQualityGate(m15, h1, h4);
+
+  console.log("================================");
+  console.log("DATA QUALITY");
+  console.log("================================");
+
+  console.log(
+    "15m:",
+    quality.frames["15m"].status,
+    "|",
+    quality.frames["15m"].reason
+  );
+
+  console.log(
+    "1h:",
+    quality.frames["1h"].status,
+    "|",
+    quality.frames["1h"].reason
+  );
+
+  console.log(
+    "4h:",
+    quality.frames["4h"].status,
+    "|",
+    quality.frames["4h"].reason
+  );
+
+  console.log("Data Gate:", quality.pass ? "PASS" : "FAIL");
   console.log("");
 
   const r15 = regime(m15, s15.structure);
